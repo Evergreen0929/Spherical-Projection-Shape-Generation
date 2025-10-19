@@ -2,6 +2,19 @@
 
 This document outlines the steps to preprocess raw 3D models into various data representations (omnidirectional maps, single-view images, and latents) required for training.
 
+## Environment Setup
+
+This project has two main environments: one for core data processing and one for rendering.
+
+### 1. Core Processing Environment
+
+Install the main dependencies using `pip`. The tested versions are listed below.
+
+```bash
+pip install numpy==1.23.5 trimesh==3.23.5 opencv-python==4.6.0.66 open3d==0.16.0
+pip install tqdm objaverse
+```
+
 ## 1. Download Data (`download_data.py`)
 
 * **Script:** `download_data.py`
