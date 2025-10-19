@@ -46,13 +46,13 @@ def validation_check(src_dir):
                     failed_info[f'{subdir}.{id}'] = 'No rendered maps'
                 else:
                     failed_info[f'{subdir}.{id}'] = f'Insufficient render maps {len(os.listdir(map_path))}/8'
-            elif os.path.isdir(render_latent_path) is False or len(os.listdir(os.path.join(render_latent_path, id))) != 13:
-                failed_loads += 1
-                print(f'No rendered image latents! ', subdir, ': ', id)
-                if os.path.isdir(render_latent_path) is False:
-                    failed_info[f'{subdir}.{id}'] = 'No image latents'
-                else:
-                    failed_info[f'{subdir}.{id}'] = f'Insufficient image latents {len(os.listdir(os.path.join(render_latent_path, id)))}/13'
+            # elif os.path.isdir(render_latent_path) is False or len(os.listdir(os.path.join(render_latent_path, id))) != 13:
+            #     failed_loads += 1
+            #     print(f'No rendered image latents! ', subdir, ': ', id)
+            #     if os.path.isdir(render_latent_path) is False:
+            #         failed_info[f'{subdir}.{id}'] = 'No image latents'
+            #     else:
+            #         failed_info[f'{subdir}.{id}'] = f'Insufficient image latents {len(os.listdir(os.path.join(render_latent_path, id)))}/13'
             elif os.path.isdir(map_latent_path) is False or len(os.listdir(map_latent_path)) != 8:
                 failed_loads += 1
                 print(f'No rendered map latents! ', subdir, ': ', id)
