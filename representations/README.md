@@ -100,7 +100,7 @@ pip install tqdm objaverse
 
     ```
     <save_folder>/
-    └── <uid_prefix>/       (e.g., 'c7')
+    └── <uid_prefix>/       (e.g., '000-000')
         └── <uid>/            (e.g., 'c70e8817...')
             ├── rgb_002_front.webp
             ├── normals_002_front.webp (not used)
@@ -108,7 +108,6 @@ pip install tqdm objaverse
             ├── 002_front_RT.txt (not used)
             ... (and for all other views)
     ```
-    *(Inferred from `distributed.py`'s `view_path` logic and `blenderProc_persp.py`'s save logic)*
 
 ## 5. Generate SP Map Latents (via VAE)
 
