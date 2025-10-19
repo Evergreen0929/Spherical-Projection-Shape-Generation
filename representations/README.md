@@ -4,10 +4,6 @@ This document outlines the steps to preprocess raw 3D models into various data r
 
 ## Environment Setup
 
-This project has two main environments: one for core data processing and one for rendering.
-
-### 1. Core Processing Environment
-
 Install the main dependencies using `pip`. The tested versions are listed below.
 
 ```bash
