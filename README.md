@@ -25,7 +25,7 @@ Existing single-view 3D generative models often suffer from inter-view inconsist
 * **Efficiency:** Operates in the image domain, inheriting powerful 2D priors (SDXL) for fast finetuning.
 
 <p align="center">
-  <img alt="Teaser" src="assets/teaser_refine.jpg" width="900">
+  <img alt="Teaser" src="assets/teaser_refine.png" width="900">
 </p>
 
 ## 📝 News
