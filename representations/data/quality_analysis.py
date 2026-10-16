@@ -1,3 +1,4 @@
+import argparse
 import os
 import shutil
 import cv2
@@ -9,7 +10,6 @@ import open3d as o3d
 def load_16bit_image(filepath, mode='pos'):
     image = cv2.imread(filepath, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
     image = image / 65535 * 2 - 1
-    # image = upsample_image(image)
     if mode == 'pos':
         image = image / 2
     return image
@@ -75,8 +75,6 @@ def cal_all_chamfer_distances(src_dir, dst_dir):
 
     cds = {}
     for subdir, files in all_files.items():
-        # if subdir in ['000-000', '000-001', '000-002']:
-        #     continue
         cds[subdir] = []
         dis_save_path = os.path.join(dst_dir, subdir)
         os.makedirs(dis_save_path, exist_ok=True)
@@ -109,7 +107,7 @@ def cal_all_chamfer_distances(src_dir, dst_dir):
 
                 if cd == None:
                     print(f'Unknown error when recon {file}.')
-                    error_save_path = os.path.join('./hf-objaverse-v1/error', subdir)
+                    error_save_path = os.path.join(os.path.dirname(dst_dir), 'error', subdir)
                     os.makedirs(error_save_path, exist_ok=True)
                     shutil.move(file, error_save_path)
                 elif cd > 0.05:
@@ -118,7 +116,7 @@ def cal_all_chamfer_distances(src_dir, dst_dir):
                     else:
                         print(f'{file} discarded! Large Recon Error {cd}.')
 
-                    save_path = os.path.join('./hf-objaverse-v1/recon', subdir, id)
+                    save_path = os.path.join(os.path.dirname(dst_dir), 'recon', subdir, id)
                     os.makedirs(save_path, exist_ok=True)
                     o3d.io.write_triangle_mesh(os.path.join(save_path, "recon_mesh.ply"), meshes[0])
                     o3d.io.write_triangle_mesh(os.path.join(save_path, "gt_mesh.ply"), meshes[1])
@@ -126,30 +124,21 @@ def cal_all_chamfer_distances(src_dir, dst_dir):
                     shutil.move(file, dis_save_path)
                 else:
                     cds[subdir].append(cd)
-                    # save_path = os.path.join('./objaverse-12k/train/recon', subdir, id)
-                    # os.makedirs(save_path, exist_ok=True)
-                    # o3d.io.write_triangle_mesh(os.path.join(save_path, "recon_mesh.ply"), meshes[0])
-                    # o3d.io.write_triangle_mesh(os.path.join(save_path, "gt_mesh.ply"), meshes[1])
 
             except Exception as e:
                 print(f"Error processing file {file}: {e}")
 
         print(f'mean chamfer distance for {subdir} is {sum(cds[subdir]) / len(cds[subdir])}')
 
-        #     if i > 10:
-        #         break
-        # break
-
     return cds
 
 if __name__ == '__main__':
-    # src_path = './hf-objaverse-v1/preprocessed'
-    # dst_path = './hf-objaverse-v1/discarded'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--src_path', type=str, required=True, help='<data_root>/<split>/preprocessed')
+    parser.add_argument('--dst_path', type=str, required=True, help='Folder that receives the discarded samples.')
+    args = parser.parse_args()
 
-    src_path = './objaverse-12k/train/preprocessed'
-    dst_path = './objaverse-12k/train/discarded'
-
-    all_cds = cal_all_chamfer_distances(src_path, dst_path)
+    all_cds = cal_all_chamfer_distances(args.src_path, args.dst_path)
     mean_cds = {key: sum(value) / len(value) for key, value in all_cds.items()}
     mean = sum(mean_cds.values()) / len(mean_cds.values())
 

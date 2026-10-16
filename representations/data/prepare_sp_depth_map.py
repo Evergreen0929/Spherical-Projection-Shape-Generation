@@ -1,3 +1,5 @@
+import argparse
+
 import numpy as np
 import trimesh
 import cv2
@@ -121,9 +123,6 @@ def process_data(src_dir, dst_dir, params):
                 print(f"Error processing file {file}: {e}")
                 failed_loads += 1
 
-            # if i > 10:
-            #     break
-        # break
 
     total_files = sum([len(value) for value in all_files.values()])
     print(f"Total {successful_loads + failed_loads} / {total_files} data have been processed!")
@@ -132,14 +131,11 @@ def process_data(src_dir, dst_dir, params):
 
 
 if __name__ == '__main__':
-    src_path = './objaverse-12k/test/glbs'
-    dst_path = './objaverse-12k/test/preprocessed'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--src_path', type=str, required=True, help='<data_root>/<split>/glbs')
+    parser.add_argument('--dst_path', type=str, required=True, help='<data_root>/<split>/preprocessed')
+    parser.add_argument('--resolution', type=int, default=512, help='Azimuthal resolution, the polar one is half.')
+    parser.add_argument('--max_depth', type=int, default=4, help='Number of SP map layers.')
+    args = parser.parse_args()
 
-    params = {
-        'resolution': 512,
-        'max_depth': 4,
-    }
-
-    # assert params['max_depth'] % 2 == 0
-
-    process_data(src_path, dst_path, params)
+    process_data(args.src_path, args.dst_path, {'resolution': args.resolution, 'max_depth': args.max_depth})

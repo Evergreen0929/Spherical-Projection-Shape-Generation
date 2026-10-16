@@ -1,80 +1,63 @@
+import argparse
 import os
+
 from tqdm import tqdm
-import shutil
 
-def delete_all_files(folder_path):
-    shutil.rmtree(folder_path)
-    print(f"All files in {folder_path} have been deleted.")
+IMAGE_EXTS = (".webp", ".png", ".jpg", ".jpeg")
 
-def validation_check(src_dir):
-    subdirs = os.listdir(src_dir)
-    all_files = {}
-    ids = {}
-    successful_loads = 0
-    failed_loads = 0
-    failed_info = {}
 
-    for subdir in subdirs:
-        all_files[subdir] = [os.path.join(src_dir, subdir, file) for file in os.listdir(os.path.join(src_dir, subdir))]
-        ids[subdir] = [file.split('.')[0] for file in os.listdir(os.path.join(src_dir, subdir))]
+def count_files(path, prefix, exts):
+    if not os.path.isdir(path):
+        return 0
+    return len([f for f in os.listdir(path) if f.startswith(prefix) and f.lower().endswith(exts)])
 
-    for subdir, files in all_files.items():
-        for i, file in enumerate(tqdm(files, desc=f"Processing {subdir}", leave=False)):
-            id = ids[subdir][i]
-            mesh_path = os.path.join(file, 'mesh.ply')
-            render_path = os.path.join(file, 'render_images')
-            map_path = os.path.join(file, 'maps')
 
-            render_latent_path = render_path.replace('preprocessed', 'latents')
-            map_latent_path = map_path.replace('preprocessed', 'latents')
+def render_dir(object_dir, uid):
+    nested = os.path.join(object_dir, 'render_images', uid)
+    return nested if os.path.isdir(nested) else os.path.join(object_dir, 'render_images')
 
-            if os.path.isfile(mesh_path) is False:
-                failed_loads += 1
-                print(f'No mesh ply! ', subdir, ': ', id)
-                failed_info[f'{subdir}.{id}'] = 'No mesh ply'
-            elif os.path.isdir(render_path) is False or len(os.listdir(os.path.join(render_path, id))) != 14:
-                failed_loads += 1
-                print(f'No rendered images! ', subdir, ': ', id)
-                if os.path.isdir(render_path) is False:
-                    failed_info[f'{subdir}.{id}'] = 'No rendered images'
-                else:
-                    failed_info[f'{subdir}.{id}'] = f'Insufficient render images {len(os.listdir(os.path.join(render_path, id)))}/14'
-            elif os.path.isdir(map_path) is False or len(os.listdir(map_path)) != 8:
-                failed_loads += 1
-                print(f'No rendered maps! ', subdir, ': ', id)
-                if os.path.isdir(map_path) is False:
-                    failed_info[f'{subdir}.{id}'] = 'No rendered maps'
-                else:
-                    failed_info[f'{subdir}.{id}'] = f'Insufficient render maps {len(os.listdir(map_path))}/8'
-            # elif os.path.isdir(render_latent_path) is False or len(os.listdir(os.path.join(render_latent_path, id))) != 13:
-            #     failed_loads += 1
-            #     print(f'No rendered image latents! ', subdir, ': ', id)
-            #     if os.path.isdir(render_latent_path) is False:
-            #         failed_info[f'{subdir}.{id}'] = 'No image latents'
-            #     else:
-            #         failed_info[f'{subdir}.{id}'] = f'Insufficient image latents {len(os.listdir(os.path.join(render_latent_path, id)))}/13'
-            elif os.path.isdir(map_latent_path) is False or len(os.listdir(map_latent_path)) != 8:
-                failed_loads += 1
-                print(f'No rendered map latents! ', subdir, ': ', id)
-                if os.path.isdir(map_latent_path) is False:
-                    failed_info[f'{subdir}.{id}'] = 'No map latents'
-                else:
-                    failed_info[f'{subdir}.{id}'] = f'Insufficient maps_latents {len(os.listdir(map_latent_path))}/8'
+
+def check_object(object_dir, uid, num_layers, check_latents):
+    if not os.path.isfile(os.path.join(object_dir, 'mesh.ply')):
+        return 'No mesh ply'
+    num_maps = count_files(os.path.join(object_dir, 'maps'), 'depth_', ('.png',))
+    if num_maps < num_layers:
+        return f'Insufficient SP maps {num_maps}/{num_layers}'
+    num_images = count_files(render_dir(object_dir, uid), 'rgb_', IMAGE_EXTS)
+    if num_images == 0:
+        return 'No rendered images'
+
+    latent_dir = object_dir.replace(f'{os.sep}preprocessed{os.sep}', f'{os.sep}latents{os.sep}')
+    if check_latents:
+        num_latents = count_files(os.path.join(latent_dir, 'maps'), 'depth_', ('.pt',))
+        if num_latents < num_layers:
+            return f'Insufficient SP map latents {num_latents}/{num_layers}'
+    return None
+
+
+def validation_check(src_dir, num_layers=4, check_latents=True):
+    """Checks that every object under ``<split>/preprocessed`` has all files required for training."""
+    src_dir = os.path.normpath(src_dir)
+    successful, failed_info = 0, {}
+    for subdir in sorted(os.listdir(src_dir)):
+        for uid in tqdm(sorted(os.listdir(os.path.join(src_dir, subdir))), desc=f"Checking {subdir}", leave=False):
+            reason = check_object(os.path.join(src_dir, subdir, uid), uid, num_layers, check_latents)
+            if reason is None:
+                successful += 1
             else:
-                successful_loads += 1
+                failed_info[f'{subdir}/{uid}'] = reason
 
+    print(f"Total {successful + len(failed_info)} objects checked.")
+    print(f"Complete: {successful}")
+    print(f"Incomplete: {len(failed_info)}")
+    for k, v in failed_info.items():
+        print(k, v)
 
-    total_files = sum([len(value) for value in all_files.values()])
-    print(f"Total {successful_loads + failed_loads} / {total_files} data have been processed!")
-    print(f"Successfully loaded: {successful_loads}")
-    print(f"Failed to load: {failed_loads}, items: \n")
-
-    if failed_info != {}:
-        for k, v in failed_info.items():
-            print(k, v)
-            # delete_all_files(os.path.join(src_path, k.split('.')[0], k.split('.')[1]))
 
 if __name__ == '__main__':
-    # src_path = '/home/jdzhang/datasets/hf-objaverse-v1/preprocessed'
-    src_path = '/home/jdzhang/datasets/objaverse-12k/additional/preprocessed'
-    validation_check(src_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--src_path', type=str, required=True, help='<data_root>/<split>/preprocessed')
+    parser.add_argument('--num_layers', type=int, default=4)
+    parser.add_argument('--skip_latents', action='store_true')
+    args = parser.parse_args()
+    validation_check(args.src_path, args.num_layers, not args.skip_latents)

@@ -1,6 +1,6 @@
 # Data Preprocessing Pipeline
 
-This document outlines the steps to preprocess raw 3D models into various data representations (omnidirectional maps, single-view images, and latents) required for training.
+This document outlines the steps to preprocess raw 3D models into the data representations (Spherical Projection (SP) maps, single-view images, latents and oriented point clouds) required for training.
 
 ## Environment Setup
 
@@ -8,23 +8,41 @@ Install the main dependencies using `pip`. The tested versions are listed below.
 
 ```bash
 pip install numpy==1.23.5 trimesh==3.23.5 opencv-python==4.6.0.66 open3d==0.16.0
-pip install tqdm objaverse
+pip install tqdm objaverse scipy PyMCubes
 ```
+
+The final layout of one split (e.g. `train`) consumed by the training scripts is:
+
+```
+<data_root>/<split>/
+├── glbs/<subdir>/<uid>.glb                     # step 1
+├── preprocessed/<subdir>/<uid>/
+│   ├── mesh.ply                                # step 2
+│   ├── maps/depth_{0..3}.png                   # step 2
+│   └── render_images/<uid>/rgb_*.webp          # step 4
+├── latents/<subdir>/<uid>/maps/depth_{0..3}.pt # step 5
+└── pointclouds/<subdir>/<uid>/points.npz       # step 7
+```
+
+Steps 1-4 and 7 only depend on the raw meshes. Step 5 requires the AutoEncoder finetuned with `train_vae.py` (see the main [README](../README.md)).
 
 ## 1. Download Data (`download_data.py`)
 
 * **Script:** `download_data.py`
-* **Purpose:** To download the raw 3D models from the Objaverse dataset based on predefined training and testing splits.
+* **Purpose:** To download the raw 3D models of the training and held-out splits from Objaverse.
+* **Splits:** `uids/train.txt` lists the 159,912 objects used for training. `uids/test.txt` lists the 1,993 held-out objects of the Objaverse evaluation split, which can be used to evaluate a trained model and are never used for training. Both lists contain the objects left after filtering and do not overlap.
+* **Usage:**
+    ```bash
+    python download_data.py --data_root <data_root>    # downloads both splits, use --splits train to skip the test split
+    ```
+    The training data are prepared from the `train` split. For evaluation, run Steps 2 and 4 on the `test` split as well to obtain the GT meshes, SP maps and input images.
 * **How it works:**
-    * It first loads lists of training and testing object UIDs from a local `.npz` file (`uid_dict.npz`).
-    * It then uses the `objaverse.load_objects` function to download the specified objects.
-    * The download process is parallelized using `multiprocessing.cpu_count()` to improve speed.
-
-* **Expected Data Structure (Input for next steps):**
-    The subsequent scripts (like `prepare_sp_depth_map.py`) expect the downloaded `.glb` or `.obj` files to be organized into a source directory, typically structured by subfolders:
+    * It loads the UIDs of each split from `uids/<split>.txt`.
+    * It uses `objaverse.load_objects` to download the objects in parallel.
+    * The downloaded files are linked (or copied with `--copy`) into the layout expected by the next steps:
 
     ```
-    <dataset_root>/
+    <data_root>/<split>/
     └── glbs/
         ├── <subdir_1>/       (e.g., '000-000')
         │   ├── <uid_1>.glb
@@ -37,7 +55,12 @@ pip install tqdm objaverse
 ## 2. Generate Spherical Projected Depth Maps (`prepare_sp_depth_map.py`)
 
 * **Script:** `prepare_sp_depth_map.py`
-* **Purpose:** To convert the 3D models into spherical depth maps (also referred to as OS maps in code).
+* **Purpose:** To convert the 3D models into multi-layer SP depth maps.
+* **Usage:**
+    ```bash
+    python data/prepare_sp_depth_map.py --src_path <data_root>/train/glbs --dst_path <data_root>/train/preprocessed \
+        --resolution 512 --max_depth 4
+    ```
 * **How it works:**
     * The script iterates through the `glbs/` directory.
     * For each model, it loads the mesh using `trimesh` and normalizes it by centering it and scaling it to fit within a unit cube.
@@ -109,20 +132,44 @@ pip install tqdm objaverse
             ... (and for all other views)
     ```
 
-## 5. Generate SP Map Latents (via VAE)
+* **Placing the renders:** The training scripts look for the condition images at `preprocessed/<subdir>/<uid>/render_images/<uid>/rgb_*.webp` (a flat `render_images/rgb_*.webp` folder is also accepted). Move or symlink the rendered folder of each object accordingly.
 
-* **Purpose:** This step involves using a pre-trained VAE (Variational Autoencoder) to encode the SP depth maps (generated in Step 2) into a compressed latent representation.
-* **Status:** The code for this step has not yet been uploaded to the repository.
+## 5. Generate SP Map Latents (`../encode_latents.py`)
+
+* **Purpose:** To encode the SP depth maps (generated in Step 2) into latents with the AutoEncoder finetuned in the first training stage, so that the diffusion model can be trained on pre-computed latents.
+* **Usage** (from the repository root):
+    ```bash
+    accelerate launch --num_processes 8 encode_latents.py --vae_path exp/vae/pretrained-40000/vae \
+        --data_root <data_root> --splits train
+    ```
+    The released AutoEncoder (`weights/SPGen-VAE/vae`, see the main README) can be used instead of your own stage 1 checkpoint.
+* **How it works:** Every SP map is mapped to `[-1, 1]` and encoded with the AutoEncoder (circular padding along the azimuth). The mean of the latent distribution is stored without the scaling factor, which is applied by the training dataset.
 
 ## 6. Final Validation Check (`validation_check.py`)
 
 * **Script:** `validation_check.py`
 * **Purpose:** To perform a final audit of the *fully processed* dataset to ensure that all required files for training are present and complete. This script assumes all previous steps (SP map generation, rendering, latent generation) have been completed and their outputs merged into a single `preprocessed` directory.
+* **Usage:**
+    ```bash
+    python data/validation_check.py --src_path <data_root>/train/preprocessed --num_layers 4
+    ```
 * **How it works:**
     * It iterates through all samples in the `preprocessed` directory.
     * For each sample, it checks for the existence and completeness of several key components:
         * `mesh.ply` (the ground-truth mesh).
-        * `maps/` (checks for a specific number of files, e.g., 8).
-        * `render_images/` (checks for a specific number of files, e.g., 14).
-        * `latents/` (specifically, `map_latent_path`, checking for 8 files).
-    * The script counts the total number of "successful" (complete) and "failed" (incomplete) data samples and prints a report, including the specific reason for any failures.
+        * `maps/depth_*.png` (at least `--num_layers` SP maps).
+        * `render_images/` (at least one rendered `rgb_*` image).
+        * `latents/.../maps/depth_*.pt` (at least `--num_layers` latents, skip with `--skip_latents`).
+    * The script counts the total number of complete and incomplete data samples and prints a report, including the specific reason for any failures.
+
+## 7. Oriented Point Clouds for the Normal Estimator (`prepare_normal_data.py`)
+
+* **Script:** `prepare_normal_data.py`
+* **Purpose:** To sample oriented point clouds from the ground-truth meshes, which are used to train the normal estimator for Poisson surface extraction.
+* **Usage:**
+    ```bash
+    python data/prepare_normal_data.py --data_root <data_root> --splits train --num_workers 16
+    ```
+* **How it works:**
+    * Each `mesh.ply` from Step 2 is converted into a watertight surface: the unsigned distance field is computed on a `197^3` grid, the enclosed interior is filled and the iso-surface one voxel away from the shape is extracted with marching cubes.
+    * `51200` points and their outward-facing face normals are sampled from this surface and saved to `pointclouds/<subdir>/<uid>/points.npz` (float32 arrays `points` and `normals`).

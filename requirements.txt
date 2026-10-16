@@ -1,0 +1,19 @@
+# Training / inference environment (tested with Python 3.10, CUDA 12.1, PyTorch 2.4.1).
+# PyTorch, torch_scatter and the optional packages are installed separately, see "Installation" in README.md.
+diffusers==0.20.2
+transformers==4.44.2
+accelerate==0.34.2
+huggingface_hub==0.25.2
+numpy<2
+einops
+opencv-python
+pillow
+tensorboard
+tqdm
+# 8-bit Adam for the diffusion stage
+bitsandbytes
+# geometry processing (normal estimator data, surface extraction)
+open3d>=0.16
+trimesh
+PyMCubes
+scipy
